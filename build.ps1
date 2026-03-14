@@ -29,12 +29,18 @@ $MisoPinMap = @{
     core  = 19
     core2 = 38
 }
+$UartPinMap = @{
+    core  = @(16, 17) # RX, TX
+    core2 = @(14, 13) # RX, TX (Port C)
+}
 
 $FQBN = $BoardMap[$Board]
 $SketchName = "M5Stack-SwitchControlerMonitor.ino"
 $SelectedSsGpio = $SsPinMap[$Board][$SsChannel - 1]
 $SelectedIntGpio = $IntPinMap[$Board][$IntChannel - 1]
 $SelectedMisoGpio = $MisoPinMap[$Board]
+$SelectedUartRxGpio = $UartPinMap[$Board][0]
+$SelectedUartTxGpio = $UartPinMap[$Board][1]
 
 $UserArduinoDir = Join-Path $HOME "Documents/Arduino"
 $UserLibrariesDir = Join-Path $UserArduinoDir "libraries"
@@ -43,6 +49,7 @@ $UsbHostShieldDir = Join-Path $UserLibrariesDir "USB_Host_Shield_Library_2.0"
 Write-Output "--- M5Stack Build Script (Core v$CoreVersion / Board: $Board) ---"
 Write-Output "USB Module DIP: SS CH$SsChannel (GPIO$SelectedSsGpio), INT CH$IntChannel (GPIO$SelectedIntGpio)"
 Write-Output "SPI: SCK=18 MOSI=23 MISO=$SelectedMisoGpio"
+Write-Output "UART(Serial2): RX=$SelectedUartRxGpio TX=$SelectedUartTxGpio"
 Write-Output "Using user library root: $UserLibrariesDir"
 
 function Ensure-CoreInstalled {
@@ -176,7 +183,9 @@ $ExtraFlags = @(
     "-DUSB_MODULE_SS_CH=$SsChannel",
     "-DUSB_MODULE_INT_CH=$IntChannel",
     "-DUSB_HOST_SHIELD_SS_GPIO=$SelectedSsGpio",
-    "-DUSB_HOST_SHIELD_INT_GPIO=$SelectedIntGpio"
+    "-DUSB_HOST_SHIELD_INT_GPIO=$SelectedIntGpio",
+    "-DSERIAL2_RX_PIN=$SelectedUartRxGpio",
+    "-DSERIAL2_TX_PIN=$SelectedUartTxGpio"
 ) -join " "
 
 Write-Output "Build flags: $ExtraFlags"

@@ -19,6 +19,16 @@
 #define USB_HOST_SHIELD_INT_GPIO 35
 #endif
 
+#ifndef SERIAL2_RX_PIN
+#if defined(ARDUINO_M5STACK_CORE2) || defined(ARDUINO_M5STACK_Core2)
+#define SERIAL2_RX_PIN 14
+#define SERIAL2_TX_PIN 13
+#else
+#define SERIAL2_RX_PIN 16
+#define SERIAL2_TX_PIN 17
+#endif
+#endif
+
 // USB Host global objects
 USB Usb;
 USBHub Hub(&Usb);
@@ -129,8 +139,11 @@ void setup() {
         M5.Display.println("SetReportParser Error");
     }
 
-    Serial2.begin(115200, SERIAL_8N1, 16, 17);
-    M5.Display.println("Serial2 Started (115200)");
+    Serial2.begin(115200, SERIAL_8N1, SERIAL2_RX_PIN, SERIAL2_TX_PIN);
+    M5.Display.printf("Serial2 Started (115200) RX:%d TX:%d\n", SERIAL2_RX_PIN,
+                      SERIAL2_TX_PIN);
+    M5.Display.println("Waiting for 5 seconds...");
+    delay(5000);
 }
 
 void drawControllerInfo() {
