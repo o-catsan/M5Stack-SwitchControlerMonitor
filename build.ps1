@@ -31,7 +31,7 @@ $MisoPinMap = @{
 }
 $UartPinMap = @{
     core  = @(16, 17) # RX, TX
-    core2 = @(14, 13) # RX, TX (Port C)
+    core2 = @(13, 14) # RX, TX (Port C)
 }
 
 $FQBN = $BoardMap[$Board]

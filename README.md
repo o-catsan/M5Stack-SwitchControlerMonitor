@@ -14,7 +14,7 @@ M5Stack に USB Host Shield を接続し、Nintendo Switch 用コントローラ
 - **デバッグ情報**: 生の HID レポートデータ (Hex Dump) を表示
 - **シリアル通信 (Serial2)**: ボードに応じて UART ピンを自動切替し、フォーマットされたコントローラー情報を 115200bps で送信 (200ms 間隔)
   - Core: `RX=GPIO16`, `TX=GPIO17`
-  - Core2 (Port C): `RX=GPIO14`, `TX=GPIO13`
+  - Core2 (Port C): `RX=GPIO13`, `TX=GPIO14`
 
 ## 送信データフォーマット (Serial2)
 

@@ -21,8 +21,8 @@
 
 #ifndef SERIAL2_RX_PIN
 #if defined(ARDUINO_M5STACK_CORE2) || defined(ARDUINO_M5STACK_Core2)
-#define SERIAL2_RX_PIN 14
-#define SERIAL2_TX_PIN 13
+#define SERIAL2_RX_PIN 13
+#define SERIAL2_TX_PIN 14
 #else
 #define SERIAL2_RX_PIN 16
 #define SERIAL2_TX_PIN 17
