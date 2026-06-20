@@ -1,5 +1,6 @@
 #include <M5Unified.h>
-#include <Usb.h>
+// Do not include <Usb.h> directly: on Windows it can resolve case-insensitively
+// to ESP32 core's USB.h. usbhub.h includes USB Host Shield's local "Usb.h".
 #include <usbhub.h>
 #include <hiduniversal.h>
 
@@ -20,7 +21,11 @@
 #endif
 
 #ifndef SERIAL2_RX_PIN
-#if defined(ARDUINO_M5STACK_CORE2) || defined(ARDUINO_M5STACK_Core2)
+#if defined(BUILD_TARGET_CORES3SE)
+// M5Unified CoreS3 SE Port C definition: pin 1=RX(GPIO18), pin 2=TX(GPIO17).
+#define SERIAL2_RX_PIN 18
+#define SERIAL2_TX_PIN 17
+#elif defined(ARDUINO_M5STACK_CORE2) || defined(ARDUINO_M5STACK_Core2)
 #define SERIAL2_RX_PIN 13
 #define SERIAL2_TX_PIN 14
 #else
@@ -33,7 +38,17 @@
 USB Usb;
 USBHub Hub(&Usb);
 HIDUniversal Hid(&Usb);
-String lastTxData = "";
+char lastTxData[21] = "00,00,00,80,80,80,80";
+
+const char* boardName() {
+#if defined(BUILD_TARGET_CORES3SE)
+    return "M5 CoreS3 SE";
+#elif defined(ARDUINO_M5STACK_CORE2) || defined(ARDUINO_M5STACK_Core2)
+    return "M5Stack Core2";
+#else
+    return "M5Stack Core";
+#endif
+}
 
 // Data structure to hold controller state
 struct ControllerState {
@@ -117,6 +132,7 @@ void setup() {
     M5.Display.setTextSize(2);
     M5.Display.println("M5 Switch2CoRE Sender");
     M5.Display.setTextSize(1);
+    M5.Display.printf("Board: %s\n", boardName());
     M5.Display.println("Init USB Host...");
     M5.Display.printf("DIP: SS CH%d(GPIO%d) / INT CH%d(GPIO%d)\n",
                       USB_MODULE_SS_CH, USB_HOST_SHIELD_SS_GPIO,
@@ -169,7 +185,7 @@ void drawControllerInfo() {
     M5.Display.printf("-:%d +:%d H:%d C:%d\n", padState.btnMinus,
                       padState.btnPlus, padState.btnHome, padState.btnCapture);
 
-    String dpadStr = "CENTER";
+    const char* dpadStr = "CENTER";
     int dx = 0, dy = 0;
     switch (padState.dpad) {
         case 0:
@@ -212,7 +228,7 @@ void drawControllerInfo() {
             break;
     }
     M5.Display.printf("LS:%d RS:%d DP:%s\n", padState.btnLStick,
-                      padState.btnRStick, dpadStr.c_str());
+                      padState.btnRStick, dpadStr);
 
     M5.Display.setCursor(0, 100);
     M5.Display.printf("L Stick: X=%3d Y=%3d\n", padState.lX, padState.lY);
@@ -249,7 +265,7 @@ void drawControllerInfo() {
 
     M5.Display.setCursor(0, 215);
     M5.Display.setTextColor(CYAN);
-    M5.Display.print("TX: " + lastTxData);
+    M5.Display.printf("TX: %s", lastTxData);
     M5.Display.setTextColor(WHITE);
 }
 
@@ -283,13 +299,10 @@ void sendControllerState() {
         byte2 = (padState.dpad & 0x0F) + 1;
     }
 
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%02X,%02X,%02X,%02X,%02X,%02X,%02X\r\n", byte0,
+    snprintf(lastTxData, sizeof(lastTxData), "%02X,%02X,%02X,%02X,%02X,%02X,%02X", byte0,
              byte1, byte2, padState.lX, padState.lY, padState.rX, padState.rY);
-    Serial2.print(buf);
-
-    lastTxData = String(buf);
-    lastTxData.trim();
+    Serial2.print(lastTxData);
+    Serial2.print("\r\n");
 }
 
 void loop() {

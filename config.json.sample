@@ -1,4 +1,5 @@
 {
     "Board": "core2",
+    "// Board candidates": "core, core2, cores3se",
     "ArduinoDir": ""
 }

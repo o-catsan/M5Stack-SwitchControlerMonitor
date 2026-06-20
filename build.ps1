@@ -1,6 +1,6 @@
 param (
     [string]$Port = "",
-    [ValidateSet("core", "core2")]
+    [ValidateSet("core", "core2", "cores3se")]
     [string]$Board = "core2",
     [ValidateRange(1, 3)]
     [int]$SsChannel = 1,
@@ -21,27 +21,48 @@ if (!$PSBoundParameters.ContainsKey('Board') -and $Config.Board) {
     $Board = $Config.Board
 }
 
-$CoreVersion = "3.2.5"
+# 3.3.7 is the currently installed m5stack:esp32 release in this environment.
+# The CoreS3 FQBN is also present in 3.2.5; keep the FQBN independent of this pin.
+$CoreVersion = "3.3.7"
 $BoardMap = @{
-    core  = "m5stack:esp32:m5stack_core"
-    core2 = "m5stack:esp32:m5stack_core2"
+    core     = "m5stack:esp32:m5stack_core"
+    core2    = "m5stack:esp32:m5stack_core2"
+    cores3se = "m5stack:esp32:m5stack_cores3"
 }
 
 $SsPinMap = @{
-    core  = @(13, 5, 0)
-    core2 = @(19, 33, 0)
+    core     = @(13, 5, 0)
+    core2    = @(19, 33, 0)
+    # USB Host Shield Library 2.0 PR #843: CoreS3 USB Module v1.2 CH2.
+    # Other CoreS3 DIP channel mappings are deliberately not guessed.
+    cores3se = @($null, 1, $null)
 }
 $IntPinMap = @{
-    core  = @(35, 34)
-    core2 = @(35, 34)
+    core     = @(35, 34)
+    core2    = @(35, 34)
+    cores3se = @($null, 14)
 }
 $MisoPinMap = @{
-    core  = 19
-    core2 = 38
+    core     = 19
+    core2    = 38
+    cores3se = 35
+}
+$SpiPinMap = @{
+    core     = @(18, 23) # SCK, MOSI
+    core2    = @(18, 23)
+    cores3se = @(36, 37)
 }
 $UartPinMap = @{
-    core  = @(16, 17) # RX, TX
-    core2 = @(13, 14) # RX, TX (Port C)
+    core     = @(16, 17) # RX, TX
+    core2    = @(13, 14) # RX, TX (Port C)
+    cores3se = @(18, 17) # RX, TX (Port C; M5Unified CoreS3 SE definition)
+}
+
+# Core/Core2 retain CH1/CH1. USB Host Shield Library 2.0 PR #843 validates
+# CoreS3 with USB Module v1.2 set to SS CH2 and INT CH2.
+if ($Board -eq "cores3se") {
+    if (!$PSBoundParameters.ContainsKey('SsChannel')) { $SsChannel = 2 }
+    if (!$PSBoundParameters.ContainsKey('IntChannel')) { $IntChannel = 2 }
 }
 
 $FQBN = $BoardMap[$Board]
@@ -49,8 +70,14 @@ $SketchName = "M5Stack-SwitchController2CoREWirelessSender.ino"
 $SelectedSsGpio = $SsPinMap[$Board][$SsChannel - 1]
 $SelectedIntGpio = $IntPinMap[$Board][$IntChannel - 1]
 $SelectedMisoGpio = $MisoPinMap[$Board]
+$SelectedSckGpio = $SpiPinMap[$Board][0]
+$SelectedMosiGpio = $SpiPinMap[$Board][1]
 $SelectedUartRxGpio = $UartPinMap[$Board][0]
 $SelectedUartTxGpio = $UartPinMap[$Board][1]
+
+if ($null -eq $SelectedSsGpio -or $null -eq $SelectedIntGpio) {
+    throw "Board '$Board' supports only USB Module v1.2 SS CH2 / INT CH2. The selected channel is not defined by USB Host Shield Library 2.0 PR #843."
+}
 
 # Set Arduino directory (priority: config.json > default)
 $DefaultArduinoDir = Join-Path $HOME "Documents/Arduino"
@@ -61,7 +88,8 @@ $UsbHostShieldDir = Join-Path $UserLibrariesDir "USB_Host_Shield_Library_2.0"
 
 Write-Output "--- M5Stack Build Script (Core v$CoreVersion / Board: $Board) ---"
 Write-Output "USB Module DIP: SS CH$SsChannel (GPIO$SelectedSsGpio), INT CH$IntChannel (GPIO$SelectedIntGpio)"
-Write-Output "SPI: SCK=18 MOSI=23 MISO=$SelectedMisoGpio"
+Write-Output "FQBN: $FQBN"
+Write-Output "SPI: SCK=$SelectedSckGpio MOSI=$SelectedMosiGpio MISO=$SelectedMisoGpio"
 Write-Output "UART(Serial2): RX=$SelectedUartRxGpio TX=$SelectedUartTxGpio"
 Write-Output "Using user library root: $UserLibrariesDir"
 
@@ -105,6 +133,7 @@ function Update-UsbHostShieldLibrary {
 
     $avrPinsPath = Join-Path $LibDir "avrpins.h"
     $usbCorePath = Join-Path $LibDir "UsbCore.h"
+    $usbHostPath = Join-Path $LibDir "usbhost.h"
 
     if (!(Test-Path $avrPinsPath)) {
         throw "avrpins.h not found: $avrPinsPath"
@@ -112,8 +141,13 @@ function Update-UsbHostShieldLibrary {
     if (!(Test-Path $usbCorePath)) {
         throw "UsbCore.h not found: $usbCorePath"
     }
+    if (!(Test-Path $usbHostPath)) {
+        throw "usbhost.h not found: $usbHostPath"
+    }
 
     $avrPinsText = Get-Content -Path $avrPinsPath -Raw
+    # Older releases lack these aliases, required to choose Core/Core2 DIP pins.
+    # Do not add them when the installed release already provides them.
     $requiredPinLines = @(
         "MAKE_PIN(P13, 13); // Extra SS for M5Stack Core",
         "MAKE_PIN(P33, 33); // Extra SS for M5Stack Core2",
@@ -164,6 +198,97 @@ typedef MAX3421e<USB_HOST_SHIELD_SS_TYPE, USB_HOST_SHIELD_INT_TYPE> MAX3421E; //
             throw "Expected ESP32 typedef was not found in UsbCore.h"
         }
     }
+
+    # USB Host Shield Library 2.0 PR #843 adds M5Stack CoreS3 support. Apply
+    # only to releases that do not yet include it; the checks make this idempotent.
+    $avrPinsText = Get-Content -Path $avrPinsPath -Raw
+    if ($avrPinsText -notmatch "ARDUINO_M5STACK_CORES3") {
+        $marker = "#elif defined(ARDUINO_XIAO_ESP32S3)"
+        if (!$avrPinsText.Contains($marker)) {
+            throw "Cannot apply CoreS3 pin patch: avrpins.h marker '$marker' was not found."
+        }
+        $coreS3Pins = @"
+#elif defined(ARDUINO_M5STACK_CORES3)
+// USB Host Shield Library 2.0 PR #843: M5Stack USB Module v1.2 on CoreS3.
+// SS/INT CH2 uses GPIO1/GPIO14; SPI uses SCK=36, MOSI=37, MISO=35.
+#ifdef pgm_read_word
+#undef pgm_read_word
+#endif
+#ifdef pgm_read_dword
+#undef pgm_read_dword
+#endif
+#ifdef pgm_read_float
+#undef pgm_read_float
+#endif
+#ifdef pgm_read_ptr
+#undef pgm_read_ptr
+#endif
+#define pgm_read_word(addr) ({ typeof(addr) _addr = (addr); *(const unsigned short *)(_addr); })
+#define pgm_read_dword(addr) ({ typeof(addr) _addr = (addr); *(const unsigned long *)(_addr); })
+#define pgm_read_float(addr) ({ typeof(addr) _addr = (addr); *(const float *)(_addr); })
+#define pgm_read_ptr(addr) ({ typeof(addr) _addr = (addr); *(void * const *)(_addr); })
+MAKE_PIN(P35, 35); // MISO
+MAKE_PIN(P37, 37); // MOSI
+MAKE_PIN(P36, 36); // SCK
+MAKE_PIN(P1, 1);   // SS (USB Module CH2)
+MAKE_PIN(P14, 14); // INT (USB Module CH2)
+
+"@
+        $avrPinsText = $avrPinsText.Replace($marker, $coreS3Pins + $marker)
+        Set-Content -Path $avrPinsPath -Value $avrPinsText -Encoding UTF8
+        Write-Output "Patched avrpins.h with the CoreS3 aliases required by USB Host Shield Library 2.0 PR #843."
+    }
+    elseif ($avrPinsText -notmatch "pgm_read_word\(addr\)") {
+        # Upgrade an earlier local minimal patch to the complete PR #843 form.
+        $needle = "// SS/INT CH2 uses GPIO1/GPIO14; SPI uses SCK=36, MOSI=37, MISO=35."
+        if (!$avrPinsText.Contains($needle)) {
+            throw "Cannot upgrade CoreS3 pin patch: avrpins.h does not contain the expected PR #843 marker."
+        }
+        $workaround = @"
+
+#ifdef pgm_read_word
+#undef pgm_read_word
+#endif
+#ifdef pgm_read_dword
+#undef pgm_read_dword
+#endif
+#ifdef pgm_read_float
+#undef pgm_read_float
+#endif
+#ifdef pgm_read_ptr
+#undef pgm_read_ptr
+#endif
+#define pgm_read_word(addr) ({ typeof(addr) _addr = (addr); *(const unsigned short *)(_addr); })
+#define pgm_read_dword(addr) ({ typeof(addr) _addr = (addr); *(const unsigned long *)(_addr); })
+#define pgm_read_float(addr) ({ typeof(addr) _addr = (addr); *(const float *)(_addr); })
+#define pgm_read_ptr(addr) ({ typeof(addr) _addr = (addr); *(void * const *)(_addr); })
+"@
+        $avrPinsText = $avrPinsText.Replace($needle, $needle + $workaround)
+        Set-Content -Path $avrPinsPath -Value $avrPinsText -Encoding UTF8
+        Write-Output "Upgraded avrpins.h to the complete CoreS3 workaround from USB Host Shield Library 2.0 PR #843."
+    }
+
+    $usbCoreText = Get-Content -Path $usbCorePath -Raw
+    if ($usbCoreText -notmatch "ARDUINO_M5STACK_CORES3") {
+        $needle = "#elif defined(ARDUINO_XIAO_ESP32S3)"
+        if (!$usbCoreText.Contains($needle)) {
+            throw "Cannot apply CoreS3 pin patch: UsbCore.h marker '$needle' was not found."
+        }
+        $usbCoreText = $usbCoreText.Replace($needle, "#elif defined(ARDUINO_M5STACK_CORES3)`r`ntypedef MAX3421e<P1, P14> MAX3421E; // USB Module v1.2: SS/INT CH2`r`n" + $needle)
+        Set-Content -Path $usbCorePath -Value $usbCoreText -Encoding UTF8
+        Write-Output "Patched UsbCore.h with the CoreS3 MAX3421E type required by USB Host Shield Library 2.0 PR #843."
+    }
+
+    $usbHostText = Get-Content -Path $usbHostPath -Raw
+    if ($usbHostText -notmatch "ARDUINO_M5STACK_CORES3") {
+        $needle = "#elif defined(ARDUINO_XIAO_ESP32S3)"
+        if (!$usbHostText.Contains($needle)) {
+            throw "Cannot apply CoreS3 pin patch: usbhost.h marker '$needle' was not found."
+        }
+        $usbHostText = $usbHostText.Replace($needle, "#elif defined(ARDUINO_M5STACK_CORES3)`r`ntypedef SPi< P36, P37, P35, P1 > spi; // USB Module v1.2 SPI pins`r`n" + $needle)
+        Set-Content -Path $usbHostPath -Value $usbHostText -Encoding UTF8
+        Write-Output "Patched usbhost.h with the CoreS3 SPI type required by USB Host Shield Library 2.0 PR #843."
+    }
 }
 
 # 1. Core
@@ -189,8 +314,8 @@ $ExtraFlags = @(
     "-DESP32",
     "-DUSB_HOST_SHIELD_SS_TYPE=$SsType",
     "-DUSB_HOST_SHIELD_INT_TYPE=$IntType",
-    "-DPIN_SPI_SCK=18",
-    "-DPIN_SPI_MOSI=23",
+    "-DPIN_SPI_SCK=$SelectedSckGpio",
+    "-DPIN_SPI_MOSI=$SelectedMosiGpio",
     "-DPIN_SPI_MISO=$SelectedMisoGpio",
     "-DPIN_SPI_SS=$SelectedSsGpio",
     "-DUSB_MODULE_SS_CH=$SsChannel",
@@ -199,7 +324,14 @@ $ExtraFlags = @(
     "-DUSB_HOST_SHIELD_INT_GPIO=$SelectedIntGpio",
     "-DSERIAL2_RX_PIN=$SelectedUartRxGpio",
     "-DSERIAL2_TX_PIN=$SelectedUartTxGpio"
-) -join " "
+)
+if ($Board -eq "cores3se") {
+    $ExtraFlags += "-DBUILD_TARGET_CORES3SE"
+    # m5stack:esp32 3.2.5 uses a board macro spelling different from the
+    # upstream PR #843 guard. Define the PR guard explicitly for both cores.
+    $ExtraFlags += "-DARDUINO_M5STACK_CORES3"
+}
+$ExtraFlags = $ExtraFlags -join " "
 
 Write-Output "Build flags: $ExtraFlags"
 
@@ -230,6 +362,16 @@ if ($ExportBinaries) {
     Write-Output ""
     Write-Output "--- Export Binaries ---"
     Write-Output "Output directory: $BuildOutputDir"
+    $ExportName = "SwitchSender_${Board}_SS-CH${SsChannel}_INT-CH${IntChannel}.bin"
+    # Arduino CLI retains the .ino suffix: <Sketch>.ino.bin. Restrict lookup
+    # to this FQBN output directory so a stale binary from another board is not used.
+    $SketchBin = Join-Path $BuildOutputDir "$SketchName.bin"
+    if (!(Test-Path $SketchBin)) {
+        throw "Exported sketch binary was not found: $SketchBin"
+    }
+    $NamedExport = Join-Path $PSScriptRoot "build" $ExportName
+    Copy-Item -LiteralPath $SketchBin -Destination $NamedExport -Force
+    Write-Output "Named export: $NamedExport"
     $BinFiles = Get-ChildItem -Path $BuildOutputDir -Filter "*.bin" -ErrorAction SilentlyContinue
     if ($BinFiles) {
         foreach ($f in $BinFiles) {
