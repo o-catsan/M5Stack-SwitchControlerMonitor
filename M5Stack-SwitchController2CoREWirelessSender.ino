@@ -116,8 +116,6 @@ const unsigned long DEBUG_POLL_INTERVAL_MS = 200;
 const uint32_t BATTERY_UPDATE_INTERVAL_MS = 10000;
 const int16_t BATTERY_TEXT_X = 190;
 const int16_t BATTERY_TEXT_Y = 215;
-const int16_t BATTERY_TEXT_W = 120;
-const int16_t BATTERY_TEXT_H = 12;
 
 uint8_t usbTaskState = USB_STATE_DETACHED;
 int usbIntLevel = -1;
@@ -338,18 +336,16 @@ uint16_t getBatteryTextColor(int level) {
 void drawBatteryStatus() {
     char batteryText[11];
     if (batteryStatus.level < 0) {
-        snprintf(batteryText, sizeof(batteryText), "BAT: --%%");
+        snprintf(batteryText, sizeof(batteryText), "BAT:  --%%");
     } else {
-        snprintf(batteryText, sizeof(batteryText), "BAT: %d%%", batteryStatus.level);
+        snprintf(batteryText, sizeof(batteryText), "BAT: %3d%%", batteryStatus.level);
     }
 
     M5.Display.setTextSize(1);
-    M5.Display.fillRect(BATTERY_TEXT_X, BATTERY_TEXT_Y,
-                        BATTERY_TEXT_W, BATTERY_TEXT_H, BLACK);
     M5.Display.setCursor(BATTERY_TEXT_X, BATTERY_TEXT_Y);
-    M5.Display.setTextColor(getBatteryTextColor(batteryStatus.level));
+    M5.Display.setTextColor(getBatteryTextColor(batteryStatus.level), BLACK);
     M5.Display.print(batteryText);
-    M5.Display.setTextColor(WHITE);
+    M5.Display.setTextColor(WHITE, BLACK);
 }
 
 void loop() {
