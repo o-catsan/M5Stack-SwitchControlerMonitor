@@ -40,6 +40,11 @@ USBHub Hub(&Usb);
 HIDUniversal Hid(&Usb);
 char lastTxData[21] = "00,00,00,80,80,80,80";
 
+struct BatteryStatus {
+    int level = -1;
+    uint32_t lastUpdateMs = 0;
+} batteryStatus;
+
 const char* boardName() {
 #if defined(BUILD_TARGET_CORES3SE)
     return "M5 CoreS3 SE";
@@ -108,6 +113,11 @@ unsigned long lastDebugPoll = 0;
 const unsigned long SEND_INTERVAL_MS = 200;
 const unsigned long DRAW_INTERVAL_MS = 33;
 const unsigned long DEBUG_POLL_INTERVAL_MS = 200;
+const uint32_t BATTERY_UPDATE_INTERVAL_MS = 10000;
+const int16_t BATTERY_TEXT_X = 190;
+const int16_t BATTERY_TEXT_Y = 215;
+const int16_t BATTERY_TEXT_W = 120;
+const int16_t BATTERY_TEXT_H = 12;
 
 uint8_t usbTaskState = USB_STATE_DETACHED;
 int usbIntLevel = -1;
@@ -267,6 +277,7 @@ void drawControllerInfo() {
     M5.Display.setTextColor(CYAN);
     M5.Display.printf("TX: %s", lastTxData);
     M5.Display.setTextColor(WHITE);
+    drawBatteryStatus();
 }
 
 void sendControllerState() {
@@ -305,9 +316,46 @@ void sendControllerState() {
     Serial2.print("\r\n");
 }
 
+void updateBatteryStatus() {
+    const uint32_t now = millis();
+    if (batteryStatus.lastUpdateMs != 0 &&
+        now - batteryStatus.lastUpdateMs < BATTERY_UPDATE_INTERVAL_MS) {
+        return;
+    }
+
+    batteryStatus.lastUpdateMs = now;
+    const int level = M5.Power.getBatteryLevel();
+    batteryStatus.level = (level >= 0 && level <= 100) ? level : -1;
+}
+
+uint16_t getBatteryTextColor(int level) {
+    if (level >= 51) return WHITE;
+    if (level >= 26) return YELLOW;
+    if (level >= 0) return RED;
+    return WHITE;
+}
+
+void drawBatteryStatus() {
+    char batteryText[11];
+    if (batteryStatus.level < 0) {
+        snprintf(batteryText, sizeof(batteryText), "BAT: --%%");
+    } else {
+        snprintf(batteryText, sizeof(batteryText), "BAT: %d%%", batteryStatus.level);
+    }
+
+    M5.Display.setTextSize(1);
+    M5.Display.fillRect(BATTERY_TEXT_X, BATTERY_TEXT_Y,
+                        BATTERY_TEXT_W, BATTERY_TEXT_H, BLACK);
+    M5.Display.setCursor(BATTERY_TEXT_X, BATTERY_TEXT_Y);
+    M5.Display.setTextColor(getBatteryTextColor(batteryStatus.level));
+    M5.Display.print(batteryText);
+    M5.Display.setTextColor(WHITE);
+}
+
 void loop() {
     Usb.Task();
     M5.update();
+    updateBatteryStatus();
 
     if (millis() - lastDebugPoll >= DEBUG_POLL_INTERVAL_MS) {
         lastDebugPoll = millis();
