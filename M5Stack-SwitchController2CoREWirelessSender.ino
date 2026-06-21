@@ -39,6 +39,8 @@ USB Usb;
 USBHub Hub(&Usb);
 HIDUniversal Hid(&Usb);
 char lastTxData[21] = "00,00,00,80,80,80,80";
+M5Canvas uiCanvas(&M5.Display);
+bool uiCanvasReady = false;
 
 struct BatteryStatus {
     int level = -1;
@@ -113,6 +115,7 @@ unsigned long lastDebugPoll = 0;
 const unsigned long SEND_INTERVAL_MS = 200;
 const unsigned long DRAW_INTERVAL_MS = 33;
 const unsigned long DEBUG_POLL_INTERVAL_MS = 200;
+const int16_t UI_TOP_Y = 15;
 const uint32_t BATTERY_UPDATE_INTERVAL_MS = 10000;
 const int16_t BATTERY_TEXT_X = 190;
 const int16_t BATTERY_TEXT_Y = 215;
@@ -137,6 +140,13 @@ void setup() {
     resetPadState();
 
     M5.Display.setRotation(1);
+    uiCanvas.setColorDepth(8);
+    uiCanvasReady = uiCanvas.createSprite(
+        M5.Display.width(), M5.Display.height() - UI_TOP_Y) != nullptr;
+    if (uiCanvasReady) {
+        uiCanvas.setTextSize(1);
+    }
+
     M5.Display.setTextSize(2);
     M5.Display.println("M5 Switch2CoRE Sender");
     M5.Display.setTextSize(1);
@@ -168,30 +178,48 @@ void setup() {
     delay(5000);
 }
 
-void drawControllerInfo() {
-    M5.Display.setCursor(0, 15);
-    M5.Display.fillRect(0, 15, M5.Display.width(), M5.Display.height() - 15, BLACK);
+uint16_t getBatteryTextColor(int level);
 
-    M5.Display.setCursor(0, 15);
-    M5.Display.printf("ST:%02X INT:%d REV:%02X\n", usbTaskState, usbIntLevel,
-                      max3421Revision);
-
-    M5.Display.setCursor(0, 30);
-    M5.Display.setTextColor(YELLOW);
-    M5.Display.print("RAW: ");
-    for (int i = 0; i < 8 && i < padState.rawLen; i++) {
-        M5.Display.printf("%02X ", padState.raw[i]);
+template <typename DisplayType>
+void drawBatteryStatus(DisplayType& target, int16_t yOffset) {
+    char batteryText[11];
+    if (batteryStatus.level < 0) {
+        snprintf(batteryText, sizeof(batteryText), "BAT:  --%%");
+    } else {
+        snprintf(batteryText, sizeof(batteryText), "BAT: %3d%%", batteryStatus.level);
     }
-    M5.Display.println();
-    M5.Display.setTextColor(WHITE);
 
-    M5.Display.setCursor(0, 50);
-    M5.Display.printf("A:%d B:%d X:%d Y:%d\n", padState.btnA, padState.btnB,
-                      padState.btnX, padState.btnY);
-    M5.Display.printf("L:%d R:%d ZL:%d ZR:%d\n", padState.btnL, padState.btnR,
-                      padState.btnZL, padState.btnZR);
-    M5.Display.printf("-:%d +:%d H:%d C:%d\n", padState.btnMinus,
-                      padState.btnPlus, padState.btnHome, padState.btnCapture);
+    target.setTextSize(1);
+    target.setCursor(BATTERY_TEXT_X, BATTERY_TEXT_Y - yOffset);
+    target.setTextColor(getBatteryTextColor(batteryStatus.level), BLACK);
+    target.print(batteryText);
+    target.setTextColor(WHITE, BLACK);
+}
+
+template <typename DisplayType>
+void drawControllerInfoTo(DisplayType& target, int16_t yOffset) {
+    const int16_t textY = UI_TOP_Y - yOffset;
+
+    target.setCursor(0, textY);
+    target.printf("ST:%02X INT:%d REV:%02X\n", usbTaskState, usbIntLevel,
+                  max3421Revision);
+
+    target.setCursor(0, 30 - yOffset);
+    target.setTextColor(YELLOW);
+    target.print("RAW: ");
+    for (int i = 0; i < 8 && i < padState.rawLen; i++) {
+        target.printf("%02X ", padState.raw[i]);
+    }
+    target.println();
+    target.setTextColor(WHITE);
+
+    target.setCursor(0, 50 - yOffset);
+    target.printf("A:%d B:%d X:%d Y:%d\n", padState.btnA, padState.btnB,
+                  padState.btnX, padState.btnY);
+    target.printf("L:%d R:%d ZL:%d ZR:%d\n", padState.btnL, padState.btnR,
+                  padState.btnZL, padState.btnZR);
+    target.printf("-:%d +:%d H:%d C:%d\n", padState.btnMinus,
+                  padState.btnPlus, padState.btnHome, padState.btnCapture);
 
     const char* dpadStr = "CENTER";
     int dx = 0, dy = 0;
@@ -235,47 +263,59 @@ void drawControllerInfo() {
         default:
             break;
     }
-    M5.Display.printf("LS:%d RS:%d DP:%s\n", padState.btnLStick,
-                      padState.btnRStick, dpadStr);
+    target.printf("LS:%d RS:%d DP:%s\n", padState.btnLStick,
+                  padState.btnRStick, dpadStr);
 
-    M5.Display.setCursor(0, 100);
-    M5.Display.printf("L Stick: X=%3d Y=%3d\n", padState.lX, padState.lY);
-    M5.Display.printf("R Stick: X=%3d Y=%3d\n", padState.rX, padState.rY);
+    target.setCursor(0, 100 - yOffset);
+    target.printf("L Stick: X=%3d Y=%3d\n", padState.lX, padState.lY);
+    target.printf("R Stick: X=%3d Y=%3d\n", padState.rX, padState.rY);
 
-    int cx = 60, cy = 160, r = 25;
-    M5.Display.drawRect(cx - r, cy - r, r * 2, r * 2, DARKGREY);
+    int cx = 60, cy = 160 - yOffset, r = 25;
+    target.drawRect(cx - r, cy - r, r * 2, r * 2, DARKGREY);
     int lx = map(padState.lX, 0, 255, -r, r);
     int ly = map(padState.lY, 0, 255, -r, r);
-    M5.Display.fillCircle(cx + lx, cy + ly, 4, GREEN);
-    M5.Display.setCursor(cx - 10, cy + r + 5);
-    M5.Display.print("LS");
+    target.fillCircle(cx + lx, cy + ly, 4, GREEN);
+    target.setCursor(cx - 10, cy + r + 5);
+    target.print("LS");
 
     cx = 160;
-    M5.Display.drawRect(cx - r, cy - r, r * 2, r * 2, DARKGREY);
+    target.drawRect(cx - r, cy - r, r * 2, r * 2, DARKGREY);
     int rx = map(padState.rX, 0, 255, -r, r);
     int ry = map(padState.rY, 0, 255, -r, r);
-    M5.Display.fillCircle(cx + rx, cy + ry, 4, GREEN);
-    M5.Display.setCursor(cx - 10, cy + r + 5);
-    M5.Display.print("RS");
+    target.fillCircle(cx + rx, cy + ry, 4, GREEN);
+    target.setCursor(cx - 10, cy + r + 5);
+    target.print("RS");
 
     cx = 260;
-    M5.Display.drawRect(cx - r, cy - r, r * 2, r * 2, DARKGREY);
-    M5.Display.drawLine(cx - r, cy, cx + r, cy, DARKGREY);
-    M5.Display.drawLine(cx, cy - r, cx, cy + r, DARKGREY);
+    target.drawRect(cx - r, cy - r, r * 2, r * 2, DARKGREY);
+    target.drawLine(cx - r, cy, cx + r, cy, DARKGREY);
+    target.drawLine(cx, cy - r, cx, cy + r, DARKGREY);
 
     if (padState.dpad != 8) {
-        M5.Display.fillCircle(cx + (dx * 15), cy + (dy * 15), 6, YELLOW);
+        target.fillCircle(cx + (dx * 15), cy + (dy * 15), 6, YELLOW);
     } else {
-        M5.Display.fillCircle(cx, cy, 4, DARKGREY);
+        target.fillCircle(cx, cy, 4, DARKGREY);
     }
-    M5.Display.setCursor(cx - 15, cy + r + 5);
-    M5.Display.print("DPAD");
+    target.setCursor(cx - 15, cy + r + 5);
+    target.print("DPAD");
 
-    M5.Display.setCursor(0, 215);
-    M5.Display.setTextColor(CYAN);
-    M5.Display.printf("TX: %s", lastTxData);
-    M5.Display.setTextColor(WHITE);
-    drawBatteryStatus();
+    target.setCursor(0, 215 - yOffset);
+    target.setTextColor(CYAN);
+    target.printf("TX: %s", lastTxData);
+    target.setTextColor(WHITE);
+    drawBatteryStatus(target, yOffset);
+}
+
+void drawControllerInfo() {
+    if (uiCanvasReady) {
+        uiCanvas.fillSprite(BLACK);
+        drawControllerInfoTo(uiCanvas, UI_TOP_Y);
+        uiCanvas.pushSprite(0, UI_TOP_Y);
+    } else {
+        M5.Display.fillRect(0, UI_TOP_Y, M5.Display.width(),
+                            M5.Display.height() - UI_TOP_Y, BLACK);
+        drawControllerInfoTo(M5.Display, 0);
+    }
 }
 
 void sendControllerState() {
@@ -331,21 +371,6 @@ uint16_t getBatteryTextColor(int level) {
     if (level >= 26) return YELLOW;
     if (level >= 0) return RED;
     return WHITE;
-}
-
-void drawBatteryStatus() {
-    char batteryText[11];
-    if (batteryStatus.level < 0) {
-        snprintf(batteryText, sizeof(batteryText), "BAT:  --%%");
-    } else {
-        snprintf(batteryText, sizeof(batteryText), "BAT: %3d%%", batteryStatus.level);
-    }
-
-    M5.Display.setTextSize(1);
-    M5.Display.setCursor(BATTERY_TEXT_X, BATTERY_TEXT_Y);
-    M5.Display.setTextColor(getBatteryTextColor(batteryStatus.level), BLACK);
-    M5.Display.print(batteryText);
-    M5.Display.setTextColor(WHITE, BLACK);
 }
 
 void loop() {
