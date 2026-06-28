@@ -24,6 +24,7 @@ if (!$PSBoundParameters.ContainsKey('Board') -and $Config.Board) {
 # 3.3.7 is the currently installed m5stack:esp32 release in this environment.
 # The CoreS3 FQBN is also present in 3.2.5; keep the FQBN independent of this pin.
 $CoreVersion = "3.3.7"
+$BoardManagerUrl = "https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json"
 $BoardMap = @{
     core     = "m5stack:esp32:m5stack_core"
     core2    = "m5stack:esp32:m5stack_core2"
@@ -96,15 +97,31 @@ Write-Output "Using user library root: $UserLibrariesDir"
 function Install-M5StackCore {
     param([string]$Version)
     Write-Output "Checking Core m5stack:esp32@$Version..."
-    $CoreList = arduino-cli core list | Out-String
+    try {
+        $CoreList = arduino-cli core list | Out-String
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        throw "arduino-cli is not installed or not available in PATH. Please install Arduino CLI and try again. Original error: $_"
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list installed Arduino cores."
+    }
+
     if ($CoreList -match "m5stack:esp32\s+$Version") {
         Write-Output "Core $Version already installed."
         return
     }
 
     Write-Output "Installing Core..."
-    arduino-cli core update-index
-    arduino-cli core install m5stack:esp32@$Version
+    arduino-cli core update-index --additional-urls "$BoardManagerUrl"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to update Arduino core index using M5Stack board manager URL: $BoardManagerUrl"
+    }
+
+    arduino-cli core install m5stack:esp32@$Version --additional-urls "$BoardManagerUrl"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install m5stack:esp32@$Version core using M5Stack board manager URL: $BoardManagerUrl"
+    }
 }
 
 function Install-Library {
