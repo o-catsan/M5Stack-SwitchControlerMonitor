@@ -24,6 +24,7 @@ if (!$PSBoundParameters.ContainsKey('Board') -and $Config.Board) {
 # 3.3.7 is the currently installed m5stack:esp32 release in this environment.
 # The CoreS3 FQBN is also present in 3.2.5; keep the FQBN independent of this pin.
 $CoreVersion = "3.3.7"
+$BoardManagerUrl = "https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json"
 $BoardMap = @{
     core     = "m5stack:esp32:m5stack_core"
     core2    = "m5stack:esp32:m5stack_core2"
@@ -103,8 +104,8 @@ function Install-M5StackCore {
     }
 
     Write-Output "Installing Core..."
-    arduino-cli core update-index
-    arduino-cli core install m5stack:esp32@$Version
+    arduino-cli core update-index --additional-urls "$BoardManagerUrl"
+    arduino-cli core install m5stack:esp32@$Version --additional-urls "$BoardManagerUrl"
 }
 
 function Install-Library {
