@@ -15,13 +15,20 @@ jobs:
       matrix:
         include:
           - board: core2
+            fqbn_suffix: core2
             ss_ch: 1
             int_ch: 1
             bin_suffix: core2_SS-CH1_INT-CH1
           - board: core
+            fqbn_suffix: core
             ss_ch: 1
             int_ch: 1
             bin_suffix: core_SS-CH1_INT-CH1
+          - board: cores3se
+            fqbn_suffix: cores3
+            ss_ch: 2
+            int_ch: 2
+            bin_suffix: cores3se_SS-CH2_INT-CH2
 
     steps:
       - name: Checkout
@@ -62,7 +69,9 @@ jobs:
         id: collect
         shell: pwsh
         run: |
-          $fqbn = "m5stack:esp32:m5stack_${{ matrix.board }}"
+          # Build target names and FQBN suffixes are not always identical
+          # (cores3se builds with m5stack_cores3).
+          $fqbn = "m5stack:esp32:m5stack_${{ matrix.fqbn_suffix }}"
           $fqbnDir = $fqbn -replace ":", "."
           $buildDir = "build\$fqbnDir"
           
