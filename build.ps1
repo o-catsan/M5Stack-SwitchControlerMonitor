@@ -2,6 +2,8 @@ param (
     [string]$Port = "",
     [ValidateSet("core", "core2", "cores3se")]
     [string]$Board = "core2",
+    [ValidateSet("M5Stack-SwitchController2CoREWirelessSender.ino", "M5Stack-PS5CoREWirelessSender.ino", "M5Stack-PS5CoREWirelessSender_Blue.ino", "M5Stack-PS5CoREWirelessReceiver.ino")]
+    [string]$SketchName = "M5Stack-SwitchController2CoREWirelessSender.ino",
     [ValidateRange(1, 3)]
     [int]$SsChannel = 1,
     [ValidateRange(1, 2)]
@@ -67,8 +69,11 @@ if ($Board -eq "cores3se") {
 }
 
 $FQBN = $BoardMap[$Board]
-$SketchName = "M5Stack-SwitchController2CoREWirelessSender.ino"
 $SelectedSsGpio = $SsPinMap[$Board][$SsChannel - 1]
+$SketchPath = Join-Path $PSScriptRoot $SketchName
+if (!(Test-Path $SketchPath)) {
+    throw "Sketch file not found: $SketchPath"
+}
 $SelectedIntGpio = $IntPinMap[$Board][$IntChannel - 1]
 $SelectedMisoGpio = $MisoPinMap[$Board]
 $SelectedSckGpio = $SpiPinMap[$Board][0]
@@ -93,6 +98,7 @@ Write-Output "FQBN: $FQBN"
 Write-Output "SPI: SCK=$SelectedSckGpio MOSI=$SelectedMosiGpio MISO=$SelectedMisoGpio"
 Write-Output "UART(Serial2): RX=$SelectedUartRxGpio TX=$SelectedUartTxGpio"
 Write-Output "Using user library root: $UserLibrariesDir"
+Write-Output "Sketch path: $SketchPath"
 
 function Install-M5StackCore {
     param([string]$Version)
@@ -307,6 +313,7 @@ Update-UsbHostShieldLibrary -LibDir $UsbHostShieldDir
 # 3. Compile
 Write-Output "Compiling $SketchName..."
 Write-Output "FQBN: $FQBN"
+Write-Output "Sketch path: $SketchPath"
 
 $SsType = "P$SelectedSsGpio"
 $IntType = "P$SelectedIntGpio"
@@ -336,17 +343,27 @@ $ExtraFlags = $ExtraFlags -join " "
 
 Write-Output "Build flags: $ExtraFlags"
 
+$SketchBase = [System.IO.Path]::GetFileNameWithoutExtension($SketchName)
+$BuildSketchDir = Join-Path $PSScriptRoot "build-temp" | Join-Path -ChildPath $SketchBase
+if (Test-Path $BuildSketchDir) {
+    Remove-Item -Path $BuildSketchDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $BuildSketchDir | Out-Null
+Copy-Item -Path $SketchPath -Destination (Join-Path $BuildSketchDir $SketchName) -Force
+
+Write-Output "Build sketch folder: $BuildSketchDir"
+
 $CompileArgs = @(
     "compile",
     "--fqbn", $FQBN,
     "--libraries", $UserLibrariesDir,
-    "--build-property", "build.extra_flags=$ExtraFlags"
+    "--build-property", "build.extra_flags=$ExtraFlags",
+    (Join-Path $BuildSketchDir $SketchName)
 )
 if ($ExportBinaries) {
     $CompileArgs += "--export-binaries"
     Write-Output "ExportBinaries: enabled"
 }
-$CompileArgs += "."
 
 & arduino-cli @CompileArgs
 
@@ -409,7 +426,7 @@ else {
 if ($Port) {
     Write-Output "Found port: $Port"
     Write-Output "Uploading to $Port..."
-    arduino-cli upload -p $Port --fqbn $FQBN .
+    arduino-cli upload -p $Port --fqbn $FQBN $BuildSketchDir
 
     if ($LASTEXITCODE -eq 0) {
         Write-Output "Upload successful!"
