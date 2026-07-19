@@ -3,4 +3,7 @@ config.json
 
 # Compiled binaries (arduino-cli --export-binaries output)
 build/
+build-out/
+build-temp/
+upload-*.log
 .vscode/

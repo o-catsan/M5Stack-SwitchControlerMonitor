@@ -5,6 +5,12 @@ M5Stack に USB Host Shield を接続し、Nintendo Switch 用コントローラ
 `M5Stack Core`、`M5Stack Core2`、`M5 CoreS3 SE` を対象に、`USB Host Shield Library 2.0` ベースで `M5Stack USB Module v1.2` を利用します。
 UI/電源制御は `M5Unified` 前提で実装しており、`M5Stack.h` ではなく `M5Unified.h` を使用します。
 
+## 今回の主な変更点
+
+- `M5Stack-PS5CoREWirelessTransmitter` と `M5Stack-PS5CoREWirelessReceiver` を追加し、M5Stack 同士を WiFi で接続できる構成に対応
+- `M5Stack-PS5CoREWirelessSender` を DualSense (PS5 コントローラー) の入力解析に対応
+- `build.ps1` に `-SketchName` を追加し、ビルド対象スケッチを切り替え可能化
+
 ## 機能
 
 - **USB Host 接続**: M5Stack USB モジュール (MAX3421E) を介してコントローラーを認識
